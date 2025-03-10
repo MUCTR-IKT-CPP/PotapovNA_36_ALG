@@ -1,0 +1,542 @@
+#include <iostream>
+#include <iterator> // Для forward_iterator_tag
+#include <cstdlib>  // Для rand() и srand()
+#include <ctime>    // Для time()
+#include <string>
+#include <vector>
+#include <sstream>
+#include <random>
+#include <chrono>
+#include <algorithm>
+#include <fstream>
+#include <numeric>
+
+using namespace std;
+using namespace std::chrono;
+
+// Узел двусвязного списка
+template <typename T>
+struct Node {
+    T data;         // Данные узла
+    Node* prev;     // Указатель на предыдущий узел
+    Node* next;     // Указатель на следующий узел
+
+    Node(const T& data) : data(data), prev(nullptr), next(nullptr) {}
+};
+
+// Класс двусвязного списка
+template <typename T>
+class DoublyLinkedList {
+private:
+    Node<T>* head;  // Указатель на начало списка
+    Node<T>* tail;  // Указатель на конец списка
+    size_t size;    // Количество элементов в списке
+
+public:
+    // Конструктор по умолчанию
+    DoublyLinkedList() : head(nullptr), tail(nullptr), size(0) {}
+
+    // Деструктор для освобождения памяти
+    ~DoublyLinkedList() {
+        while (head != nullptr) {
+            Node<T>* temp = head;
+            head = head->next;
+            delete temp;
+        }
+    }
+
+    // Проверка на пустоту
+    bool empty() const {
+        return size == 0;
+    }
+
+    // Получение количества элементов
+    size_t count() const {
+        return size;
+    }
+
+    // Добавление элемента в начало
+    void push_front(const T& data) {
+        Node<T>* newNode = new Node<T>(data);
+        if (empty()) {
+            head = tail = newNode;
+        }
+        else {
+            newNode->next = head;
+            head->prev = newNode;
+            head = newNode;
+        }
+        size++;
+    }
+
+    // Добавление элемента в конец
+    void push_back(const T& data) {
+        Node<T>* newNode = new Node<T>(data);
+        if (empty()) {
+            head = tail = newNode;
+        }
+        else {
+            tail->next = newNode;
+            newNode->prev = tail;
+            tail = newNode;
+        }
+        size++;
+    }
+
+    // Класс итератора
+    class Iterator {
+    private:
+        Node<T>* current; // Текущий узел
+
+    public:
+        Iterator(Node<T>* node) : current(node) {}
+
+        // Оператор разыменования
+        T& operator*() const {
+            return current->data;
+        }
+
+        // Префиксный инкремент (++it)
+        Iterator& operator++() {
+            current = current->next;
+            return *this;
+        }
+
+        // Постфиксный инкремент (it++)
+        Iterator operator++(int) {
+            Iterator temp = *this;
+            ++(*this);
+            return temp;
+        }
+
+        // Префиксный декремент (--it)
+        Iterator& operator--() {
+            current = current->prev;
+            return *this;
+        }
+
+        // Оператор сравнения на равенство
+        bool operator==(const Iterator& other) const {
+            return current == other.current;
+        }
+
+        // Оператор сравнения на неравенство
+        bool operator!=(const Iterator& other) const {
+            return current != other.current;
+        }
+
+        // Для доступа к текущему узлу (используется в erase)
+        Node<T>* getCurrent() const {
+            return current;
+        }
+    };
+
+    // Начало списка
+    Iterator begin() const {
+        return Iterator(head);
+    }
+
+    // Конец списка (элемент после последнего)
+    Iterator end() const {
+        return Iterator(nullptr);
+    }
+
+    // Вставка элемента после указанного итератора
+    void insert(const Iterator& pos, const T& data) {
+        if (pos == end()) {
+            push_back(data);
+            return;
+        }
+
+        Node<T>* currentNode = pos.getCurrent();
+        Node<T>* newNode = new Node<T>(data);
+
+        // Связываем новый узел с соседями
+        newNode->prev = currentNode;
+        newNode->next = currentNode->next;
+
+        if (currentNode->next != nullptr) {
+            currentNode->next->prev = newNode;
+        }
+        else {
+            tail = newNode; // Если вставляем после хвоста
+        }
+
+        currentNode->next = newNode;
+        size++;
+    }
+
+    // Удаление элемента по итератору
+    void eraseElem(const Iterator& pos) {
+        Node<T>* toDelete = pos.getCurrent();
+        if (toDelete == nullptr) return;
+
+        // Связываем соседние узлы
+        if (toDelete->prev != nullptr) {
+            toDelete->prev->next = toDelete->next;
+        }
+        else {
+            head = toDelete->next; // Удаляем голову
+        }
+
+        if (toDelete->next != nullptr) {
+            toDelete->next->prev = toDelete->prev;
+        }
+        else {
+            tail = toDelete->prev; // Удаляем хвост
+        }
+
+        delete toDelete;
+        size--;
+    }
+
+    /*
+    * Произвольная вставка
+    * @param n индекс элемента после которого будет производиться вставка
+    */
+    void insert_in_middle(DoublyLinkedList& list, int n, T val) {
+        auto it = list.begin();
+        for (int i = 0; i < n - 1; i++) {
+            it++;
+        }
+        list.insert(it, val);
+    }
+
+    /*
+    * Удаление
+    * @param n индекс элемента который будет удален
+    */
+    void erase(DoublyLinkedList& list, int n) {
+        auto it = list.begin();
+        for (int i = 0; i < n - 1; i++) {
+            it++;
+        }
+        list.eraseElem(it);
+    }
+
+    void clear() {
+        while (head != nullptr) {
+            Node<T>* temp = head;
+            head = head->next;
+            delete temp;
+        }
+        tail = nullptr;
+        size = 0;
+    }
+
+    void insertionSort(size_t& comparisons, size_t& swaps) {
+        if (size <= 1) return; // Если список пуст или содержит один элемент, он уже отсортирован
+
+        // Начинаем со второго элемента
+        auto it = begin();
+        ++it;
+
+        while (it != end()) {
+            auto keyIt = it; // Итератор на текущий элемент
+            auto prevIt = Iterator(keyIt.getCurrent()->prev); // Итератор на предыдущий элемент
+
+            ++it; // Переходим к следующему элементу перед модификациями
+
+            // Поиск правильной позиции для вставки
+            while (prevIt != end() && *prevIt > *keyIt) {
+                comparisons++;
+                --prevIt;
+            }
+            comparisons++; // Учитываем последнее сравнение
+
+            // Если позиция изменилась, перемещаем элемент
+            if (prevIt.getCurrent() != keyIt.getCurrent()->prev) {
+                // Сохраняем данные текущего элемента
+                T data = *keyIt;
+
+                // Удаляем текущий элемент
+                eraseElem(keyIt);
+
+                // Вставляем элемент после prevIt
+                if (prevIt == end()) {
+                    push_front(data); // Вставка в начало
+                }
+                else {
+                    insert(++prevIt, data); // Вставка после prevIt
+                }
+
+                swaps++; // Увеличиваем счетчик обменов
+            }
+        }
+    }
+
+};
+
+
+void test1() {
+    srand(time(nullptr));
+
+    DoublyLinkedList<int> list;
+
+    // Заполнение 1000 случайными числами от -1000 до 1000
+    for (int i = 0; i < 1000; i++) {
+        int num = rand() % 2001 - 1000; // Генерация числа в диапазоне [-1000, 1000]
+        list.push_back(num);
+    }
+
+    int sum = 0;
+    int current_min = 2001;
+    int current_max = -1001;
+
+    // Обход списка и вычисление характеристик
+    for (auto num : list) {
+        if (num < current_min)
+            current_min = num;
+        if (num > current_max)
+            current_max = num;
+        sum += num;
+    }
+
+    // Вывод результатов
+    cout << "Тест 1 результаты:\n";
+    cout << "--------------------------------\n";
+    cout << "Элементов: " << list.count() << endl;
+    cout << "Сумма:     " << sum << endl;
+    cout << "Среднее:   " << double(sum) / list.count() << endl;
+    cout << "Минимум:   " << current_min << endl;
+    cout << "Максимум:  " << current_max << endl;
+    cout << "--------------------------------\n\n";
+
+    list.clear();
+}
+
+
+void printList(const DoublyLinkedList<string>& list) {
+    cout << "Содержимое списка (" << list.count() << " элементов):\n";
+    for (auto str : list) {
+        cout << "[" << str << "] ";
+    }
+    cout << "\n\n";
+}
+
+void test2() {
+    cout << "Тест 2 результаты:\n";
+    DoublyLinkedList<string> list;
+
+    vector<string> initialData = { "Element01", "Element02", "Element03",
+        "Element04", "Element05","Element06", "Element07", "Element08",
+        "Element09", "Element10" };
+
+    // Заполнение списка
+    for (const auto& str : initialData) {
+        list.push_back(str);
+    }
+
+    cout << "=== Начальное состояние списка ===\n";
+    printList(list);
+
+    // Тест 2.1: Вставка в начало
+    cout << "Вставка 'FrontInsert' после 0-го элемента\n";
+    list.push_front("FrontInsert");
+    printList(list);
+
+    // Тест 2.2: Вставка в середину
+    cout << "Вставка 'MiddleInsert' после 5-го элемента\n";
+    list.insert_in_middle(list, 5, "MiddleInsert");
+    printList(list);
+
+    // Тест 2.3: Вставка в конец
+    cout << "Вставка 'EndInsert' после последнего элемента\n";
+    list.push_back("EndInsert");
+    printList(list);
+
+    // Тест 2.4: Удаление первого элемента
+    cout << "Удаление 0-го элемента\n";
+    list.erase(list, 0);
+    printList(list);
+
+    // Тест 2.5: Удаление из середины
+    cout << "Удаление 6-го элемента\n";
+    list.erase(list, 6);
+    printList(list);
+
+    // Тест 2.6: Удаление последнего элемента
+    cout << "Удаление последнего элемента\n";
+    list.erase(list, list.count());
+    printList(list);
+
+    list.clear();
+}
+
+
+struct Date {
+    int day;
+    int month;
+    int year;
+};
+
+struct Person {
+    string last_name;
+    string first_name;
+    string patronymic;
+    Date birth_date;
+};
+
+Date generate_random_date() {
+    vector<int> days = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+    Date d;
+    d.year = 1980 + rand() % 40; // 1980-2019
+    d.month = 1 + rand() % 12;
+
+    // Корректировка дней для февраля с учетом високосного года
+    int max_day = days[d.month - 1];
+    if (d.month == 2 && (d.year % 4 == 0 && (d.year % 100 != 0 || d.year % 400 == 0))) {
+        max_day = 29;
+    }
+
+    d.day = 1 + rand() % max_day;
+    return d;
+}
+
+int calculate_age(const Date& birth) {
+    int years = 2020 - birth.year;
+    if (birth.month > 1 || (birth.month == 1 && birth.day > 1)) {
+        years--;
+    }
+    return years;
+}
+
+void test3() {
+    srand(time(nullptr));
+    cout << "Тест 3 результаты:\n";
+    vector<string> last_names = { "Иванов", "Петров", "Сидоров", "Кузнецов", "Смирнов" };
+    vector<string> first_names = { "Алексей", "Никита", "Дмитрий", "Роман", "Сергей" };
+    vector<string> patronymics = { "Алексеевич", "Дмитриевич", "Сергеевич", "Олегович", "Игоревич" };
+
+    DoublyLinkedList<Person> persons;
+
+    for (int i = 0; i < 10; ++i) {
+        Person p;
+        p.last_name = last_names[rand() % last_names.size()];
+        p.first_name = first_names[rand() % first_names.size()];
+        p.patronymic = patronymics[rand() % patronymics.size()];
+        p.birth_date = generate_random_date();
+        persons.push_back(p);
+    }
+
+    // Вывод всех созданных персон
+    cout << "=== Список созданных персон ===\n";
+    for (auto p : persons) {
+        cout << "ФИО: \t" << p.last_name << " " << p.first_name << " " << p.patronymic
+            << ", Дата рождения: \t" << p.birth_date.day << "." << p.birth_date.month << "." << p.birth_date.year << endl;
+    }
+
+    // Контейнеры для результатов
+    DoublyLinkedList<Person> young;
+    DoublyLinkedList<Person> senior;
+    int invalid_count = 0;
+
+    // Фильтрация
+    for (auto p : persons) {
+        int age = calculate_age(p.birth_date);
+
+        if (age < 20) {
+            young.push_back(p);
+        }
+        else if (age > 30) {
+            senior.push_back(p);
+        }
+    }
+
+    // Дополнительная проверка через пересчет
+    int total_young = 0;
+    int total_senior = 0;
+
+    for (auto p : young) {
+        int age = calculate_age(p.birth_date);
+        if (age >= 20) invalid_count++;
+        total_young++;
+    }
+
+    for (auto p : senior) {
+        int age = calculate_age(p.birth_date);
+        if (age <= 30) invalid_count++;
+        total_senior++;
+    }
+
+    // Вывод результатов
+    cout << "~~~~~~~~~~~~~~~\n";
+    cout << "Всего персон: " << persons.count() << endl;
+    cout << "Моложе 20: " << total_young << endl;
+    cout << "Старше 30: " << total_senior << endl;
+    cout << "Ошибочных записей: " << invalid_count << endl;
+
+    persons.clear();
+
+}
+
+
+vector<double> generate_random_data(int size) {
+    random_device rd;
+    mt19937 engine(time(0));
+    uniform_real_distribution<double> gen(-1.0, 1.0);
+
+    vector<double> array(size);
+    for (int i = 0; i < size; ++i) {
+        array[i] = gen(engine);
+    }
+    return array;
+}
+
+
+void test4() {
+    cout << "\n\n" << endl;
+    vector<size_t> sizes = { 1000, 2000, 4000, 8000};
+    const int ATTEMPTS_PER_SERIES = 5;
+
+    ofstream time_file("times.txt");
+    ofstream swap_file("swaps.txt");
+    ofstream pass_file("passes.txt");
+
+    for (size_t i = 0; i < sizes.size(); ++i) {
+        size_t size = sizes[i];
+        cout << "Running tests for size: " << size << endl;
+
+        for (int attempt = 0; attempt < ATTEMPTS_PER_SERIES; ++attempt) {
+            // Генерация данных
+            vector<double> data = generate_random_data(size);
+
+            // Создание списка
+            DoublyLinkedList<double> list;
+
+            for (double val : data) {
+                list.push_back(val);
+            }
+
+            size_t comparisons = 0, swaps = 0;
+            auto start = high_resolution_clock::now();
+            list.insertionSort(comparisons, swaps);
+            auto end = high_resolution_clock::now();
+
+            duration<double> sec_diff = end - start;
+
+            time_file << size << " " << sec_diff.count() << "\n";
+            swap_file << size << " " << swaps << "\n";
+            pass_file << size << " " << comparisons << "\n";
+            cout << "Size: " << size << ", Time: " << sec_diff.count() << "s, Swaps: " << swaps << ", Comparisons: " << comparisons << endl;
+            list.clear();
+        }
+    }
+
+    time_file.close();
+    swap_file.close();
+    pass_file.close();
+
+    cout << "Results saved to times.txt, swaps.txt, and passes.txt" << endl;
+
+}
+
+
+int main() {
+    setlocale(LC_ALL, "Russian");
+    test1();
+    test2();
+    test3();
+    test4();
+    return 0;
+}
