@@ -1,0 +1,212 @@
+#include <iostream>
+#include <vector>
+#include <tuple>
+#include <random>
+#include <set>
+#include <algorithm>
+#include <chrono>
+#include <fstream>
+#include <queue>
+#include <numeric>
+using namespace std;
+using namespace chrono;
+
+// DSU структура для алгоритма Краскала
+struct DSU {
+    vector<int> parent, rank;
+    DSU(int n) : parent(n), rank(n, 1) {
+        iota(parent.begin(), parent.end(), 0);
+    }
+    int find(int u) {
+        return parent[u] == u ? u : (parent[u] = find(parent[u])); 
+    }
+    bool unite(int u, int v) {
+        u = find(u), v = find(v);
+        if (u == v) return false;
+        if (rank[u] < rank[v]) swap(u, v);
+        parent[v] = u;
+        if (rank[u] == rank[v]) rank[u]++;
+        return true;
+    }
+};
+
+class Graph {
+private:
+    int numVertices;
+    bool directed;
+    vector<vector<pair<int, int>>> adjacencyList; // пара: вершина, вес
+    vector<tuple<int, int, int>> edgeList; // кортеж: u, v, вес
+
+public:
+    Graph(int n, bool dir) : numVertices(n), directed(dir) {
+        adjacencyList.resize(n);
+    }
+
+    void addEdge(int u, int v, int weight) {
+        edgeList.emplace_back(u, v, weight);
+        adjacencyList[u].emplace_back(v, weight);
+        if (!directed) {
+            adjacencyList[v].emplace_back(u, weight);
+        }
+    }
+
+    vector<vector<int>> getAdjacencyMatrix() const {
+        vector<vector<int>> matrix(numVertices, vector<int>(numVertices, 0));
+        for (const auto& edge : edgeList) {
+            int u = get<0>(edge);
+            int v = get<1>(edge);
+            int weight = get<2>(edge);
+            matrix[u][v] = weight;
+            if (!directed) {
+                matrix[v][u] = weight;
+            }
+        }
+        return matrix;
+    }
+
+    vector<tuple<int, int, int>> getEdgeList() const {
+        return edgeList;
+    }
+
+    int getNumVertices() const { return numVertices; }
+    bool isDirected() const { return directed; }
+};
+
+class GraphGenerator {
+public:
+    struct Parameters {
+        int num_nodes;
+        int min_edges_per_vertex;
+        bool directed;
+        int min_weight = 1;
+        int max_weight = 20;
+    };
+
+    Graph generate(const Parameters& params) {
+        int n = params.num_nodes;
+        Graph graph(n, params.directed);
+        random_device rd;
+        mt19937 gen(rd());
+        uniform_int_distribution<> weight_dist(params.min_weight, params.max_weight);
+
+        // Гарантия связности: строим остовное дерево
+        for (int i = 1; i < n; ++i) {
+            uniform_int_distribution<> parent_dist(0, i - 1);
+            int parent = parent_dist(gen);
+            int weight = weight_dist(gen);
+            graph.addEdge(parent, i, weight);
+        }
+
+        // Добавляем дополнительные ребра
+        uniform_int_distribution<> node_dist(0, n - 1);
+        set<pair<int, int>> existing_edges;
+        for (const auto& edge : graph.getEdgeList()) {
+            int u = get<0>(edge), v = get<1>(edge);
+            if (u > v && !params.directed) swap(u, v);
+            existing_edges.insert({ u, v });
+        }
+
+        int required_edges = params.min_edges_per_vertex * n / 2;
+        while (existing_edges.size() < required_edges) {
+            int u = node_dist(gen);
+            int v = node_dist(gen);
+            if (u == v) continue;
+            if (!params.directed && u > v) swap(u, v);
+            if (existing_edges.count({ u, v })) continue;
+
+            int weight = weight_dist(gen);
+            graph.addEdge(u, v, weight);
+            existing_edges.insert({ u, v });
+        }
+
+        return graph;
+    }
+};
+
+// Алгоритм Краскала
+vector<tuple<int, int, int>> kruskalMST(const Graph& graph) {
+    auto edges = graph.getEdgeList();
+    sort(edges.begin(), edges.end(), [](const auto& a, const auto& b) {
+        return get<2>(a) < get<2>(b);
+        });
+
+    DSU dsu(graph.getNumVertices());
+    vector<tuple<int, int, int>> mst;
+
+    for (const auto& edge : edges) {
+        int u = get<0>(edge);
+        int v = get<1>(edge);
+        if (dsu.find(u) != dsu.find(v)) { 
+            dsu.unite(u, v);
+            mst.push_back(edge);
+            if (mst.size() == graph.getNumVertices() - 1) break;
+        }
+    }
+
+    for (const auto& edge : edges) {
+        int u = get<0>(edge); // Первая вершина ребра
+        int v = get<1>(edge); // Вторая вершина ребра
+        int weight = get<2>(edge); // Вес ребра
+
+        cout << "Ребро: (" << u << ", " << v << ") с весом " << weight << endl;
+    }
+
+    return mst;
+}
+
+int main() {
+    setlocale(LC_ALL, "Russian");
+    vector<int> nodes = { 10, 20 };
+    vector<int> min_edges = { 3, 4};
+
+    ofstream csv("results.csv");
+    csv << "Nodes,Time(ms)\n";
+
+    for (size_t idx = 0; idx < nodes.size(); ++idx) {
+        int n = nodes[idx];
+        int min_e = min_edges[idx];
+
+        for (int test = 0; test < 5; ++test) {
+            GraphGenerator generator;
+            GraphGenerator::Parameters params;
+            params.num_nodes = n;
+            params.min_edges_per_vertex = min_e;
+            params.directed = false;
+
+            // Генерация графа
+            Graph graph = generator.generate(params);
+
+            // Замер времени выполнения алгоритма Крускала
+            auto start = high_resolution_clock::now();
+            auto mst = kruskalMST(graph);
+            auto stop = high_resolution_clock::now();
+            auto duration = duration_cast<microseconds>(stop - start);
+            double ms = duration.count() / 1000.0;
+            csv << n << "," << ms << "\n";
+
+            // Вывод матрицы смежности
+            auto matrix = graph.getAdjacencyMatrix();
+            cout << "\nМатрица смежности (N = " << n << ", Тест " << test + 1 << "):\n";
+
+            // Заголовок
+            cout << "    |";
+            for (int col = 0; col < n; ++col) {
+                printf("%4d", col);
+            }
+            cout << "\n----" << string(n * 4 + 1, '-') << endl;
+
+            // Строки матрицы
+            for (int row = 0; row < n; ++row) {
+                printf("%3d |", row);
+                for (int col = 0; col < n; ++col) {
+                    printf("%4d", matrix[row][col]);
+                }
+                cout << endl;
+            }
+        }
+    }
+
+    csv.close();
+    cout << "\nДанные сохранены в results.csv" << endl;
+    return 0;
+}
