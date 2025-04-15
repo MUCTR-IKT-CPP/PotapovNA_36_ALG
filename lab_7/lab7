@@ -1,0 +1,401 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <random>
+#include <string>
+#include <fstream>
+#include <numeric>
+#include <functional>
+#include <climits>
+
+using namespace std;
+
+// AVL-дерево
+struct AVLNode {
+    int key;
+    AVLNode* left;
+    AVLNode* right;
+    int height;
+    AVLNode(int k) : key(k), left(nullptr), right(nullptr), height(1) {}
+};
+
+class AVL {
+private:
+    AVLNode* root;
+
+    int height(AVLNode* node) {
+        return node ? node->height : 0;
+    }
+
+    int balanceFactor(AVLNode* node) {
+        return height(node->right) - height(node->left);
+    }
+
+    void updateHeight(AVLNode* node) {
+        node->height = 1 + max(height(node->left), height(node->right));
+    }
+
+    AVLNode* rotateRight(AVLNode* y) {
+        AVLNode* x = y->left;
+        AVLNode* T2 = x->right;
+        x->right = y;
+        y->left = T2;
+        updateHeight(y);
+        updateHeight(x);
+        return x;
+    }
+
+    AVLNode* rotateLeft(AVLNode* x) {
+        AVLNode* y = x->right;
+        AVLNode* T2 = y->left;
+        y->left = x;
+        x->right = T2;
+        updateHeight(x);
+        updateHeight(y);
+        return y;
+    }
+
+    AVLNode* balance(AVLNode* node) {
+        updateHeight(node);
+        int bf = balanceFactor(node);
+
+        if (bf == 2) {
+            if (balanceFactor(node->right) < 0)
+                node->right = rotateRight(node->right);
+            return rotateLeft(node);
+        }
+        else if (bf == -2) {
+            if (balanceFactor(node->left) > 0)
+                node->left = rotateLeft(node->left);
+            return rotateRight(node);
+        }
+        return node;
+    }
+
+    AVLNode* insertRec(AVLNode* node, int key) {
+        if (!node) return new AVLNode(key);
+        if (key < node->key)
+            node->left = insertRec(node->left, key);
+        else
+            node->right = insertRec(node->right, key);
+        return balance(node);
+    }
+
+    AVLNode* minValueNode(AVLNode* node) {
+        AVLNode* current = node;
+        while (current->left)
+            current = current->left;
+        return current;
+    }
+
+    AVLNode* removeRec(AVLNode* node, int key) {
+        if (!node) return nullptr;
+
+        if (key < node->key)
+            node->left = removeRec(node->left, key);
+        else if (key > node->key)
+            node->right = removeRec(node->right, key);
+        else {
+            if (!node->left || !node->right) {
+                AVLNode* temp = node->left ? node->left : node->right;
+                if (!temp) {
+                    temp = node;
+                    node = nullptr;
+                }
+                else {
+                    *node = *temp;
+                }
+                delete temp;
+            }
+            else {
+                AVLNode* temp = minValueNode(node->right);
+                node->key = temp->key;
+                node->right = removeRec(node->right, temp->key);
+            }
+        }
+
+        if (!node) return nullptr;
+
+        return balance(node);
+    }
+
+    void clear(AVLNode* node) {
+        if (node) {
+            clear(node->left);
+            clear(node->right);
+            delete node;
+        }
+    }
+
+public:
+    AVL() : root(nullptr) {}
+
+    ~AVL() {
+        clear(root);
+    }
+
+    void insert(int key) {
+        root = insertRec(root, key);
+    }
+
+    bool contains(int key) {
+        AVLNode* curr = root;
+        while (curr) {
+            if (key == curr->key)
+                return true;
+            else if (key < curr->key)
+                curr = curr->left;
+            else
+                curr = curr->right;
+        }
+        return false;
+    }
+
+    void remove(int key) {
+        root = removeRec(root, key);
+    }
+
+    int maxDepth() {
+        function<int(AVLNode*)> getDepth = [&](AVLNode* node) {
+            if (!node) return 0;
+            return 1 + max(getDepth(node->left), getDepth(node->right));
+            };
+        return getDepth(root);
+    }
+
+    vector<int> allDepths() {
+        vector<int> depths;
+        function<void(AVLNode*, int)> traverse = [&](AVLNode* node, int depth) {
+            if (!node) return;
+            depths.push_back(depth);
+            traverse(node->left, depth + 1);
+            traverse(node->right, depth + 1);
+            };
+        traverse(root, 1);
+        return depths;
+    }
+};
+
+// Рандомизированное дерево (Treap)
+struct TreapNode {
+    int key;
+    int priority;
+    TreapNode* left;
+    TreapNode* right;
+    TreapNode(int k, int p) : key(k), priority(p), left(nullptr), right(nullptr) {}
+};
+
+class Treap {
+private:
+    TreapNode* root;
+    mt19937 rng;
+    uniform_int_distribution<int> prioDist;
+
+    TreapNode* merge(TreapNode* left, TreapNode* right) {
+        if (!left) return right;
+        if (!right) return left;
+
+        if (left->priority > right->priority) {
+            left->right = merge(left->right, right);
+            return left;
+        }
+        else {
+            right->left = merge(left, right->left);
+            return right;
+        }
+    }
+
+    void split(TreapNode* node, int key, TreapNode*& left, TreapNode*& right) {
+        if (!node) {
+            left = right = nullptr;
+            return;
+        }
+
+        if (node->key <= key) {
+            split(node->right, key, node->right, right);
+            left = node;
+        }
+        else {
+            split(node->left, key, left, node->left);
+            right = node;
+        }
+    }
+
+public:
+    Treap() : root(nullptr), rng(random_device{}()), prioDist(0, INT_MAX) {}
+
+    void insert(int key) {
+        int priority = prioDist(rng);
+        TreapNode* newNode = new TreapNode(key, priority);
+        TreapNode* left, * right;
+        split(root, key, left, right);
+        root = merge(merge(left, newNode), right);
+    }
+
+    bool contains(int key) {
+        TreapNode* curr = root;
+        while (curr) {
+            if (key == curr->key)
+                return true;
+            else if (key < curr->key)
+                curr = curr->left;
+            else
+                curr = curr->right;
+        }
+        return false;
+    }
+
+    void remove(int key) {
+        TreapNode* left, * mid, * right;
+        split(root, key - 1, left, right);
+        split(right, key, mid, right);
+        delete mid;
+        root = merge(left, right);
+    }
+
+    int maxDepth() {
+        function<int(TreapNode*)> getDepth = [&](TreapNode* node) {
+            if (!node) return 0;
+            return 1 + max(getDepth(node->left), getDepth(node->right));
+            };
+        return getDepth(root);
+    }
+
+    vector<int> allDepths() {
+        vector<int> depths;
+        function<void(TreapNode*, int)> traverse = [&](TreapNode* node, int depth) {
+            if (!node) return;
+            depths.push_back(depth);
+            traverse(node->left, depth + 1);
+            traverse(node->right, depth + 1);
+            };
+        traverse(root, 1);
+        return depths;
+    }
+};
+
+int main() {
+    const int numSeries = 9; // i от 10 до 18 (включительно)
+    const int numRepetitions = 50;
+    mt19937 rng(random_device{}());
+
+    cout << "Starting performance comparison between AVL and Treap...\n";
+    cout << "Series\tN\tRep\tTree\tMaxD\tInsTime(μs)\tDelTime(μs)\tSearchTime(μs)\n";
+
+    ofstream outFile("results.csv");
+    outFile << "series,n,repetition,tree_type,max_depth,insert_time,delete_time,search_time" << endl;
+
+    ofstream depthFile("depths.csv");
+    depthFile << "series,n,repetition,tree_type,depth" << endl;
+
+    for (int i = 0; i < numSeries; ++i) {
+        const int exponent = 10 + i;
+        const int N = pow(2, exponent);
+
+        cout << "\n=== Series " << i << " (N=2^" << exponent << "=" << N << ") ===\n";
+
+        for (int repetition = 0; repetition < numRepetitions; ++repetition) {
+            if (repetition % 10 == 0) {
+                cout << "  Repetition " << repetition << "/" << numRepetitions << "...\n";
+            }
+
+            // Генерация данных
+            vector<int> data(N);
+            iota(data.begin(), data.end(), 0);
+            shuffle(data.begin(), data.end(), rng);
+
+            // Генерация ключей для операций
+            uniform_int_distribution<int> insertDist(N, 2 * N - 1);
+            vector<int> insertKeys;
+            for (int j = 0; j < 1000; ++j)
+                insertKeys.push_back(insertDist(rng));
+
+            uniform_int_distribution<int> opDist(0, N - 1);
+            vector<int> deleteKeys, searchKeys;
+            for (int j = 0; j < 1000; ++j) {
+                deleteKeys.push_back(data[opDist(rng)]);
+                searchKeys.push_back(data[opDist(rng)]);
+            }
+
+            // Тестирование AVL
+            AVL avl;
+            auto start = chrono::high_resolution_clock::now();
+            for (int num : data) avl.insert(num);
+            auto end = chrono::high_resolution_clock::now();
+            auto avlBuildTime = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+            int avlMaxDepth = avl.maxDepth();
+
+            // AVL операции
+            start = chrono::high_resolution_clock::now();
+            for (int key : insertKeys) avl.insert(key);
+            end = chrono::high_resolution_clock::now();
+            auto avlInsertTime = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+            start = chrono::high_resolution_clock::now();
+            for (int key : deleteKeys) avl.remove(key);
+            end = chrono::high_resolution_clock::now();
+            auto avlDeleteTime = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+            start = chrono::high_resolution_clock::now();
+            for (int key : searchKeys) avl.contains(key);
+            end = chrono::high_resolution_clock::now();
+            auto avlSearchTime = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+            // Тестирование Treap
+            Treap treap;
+            start = chrono::high_resolution_clock::now();
+            for (int num : data) treap.insert(num);
+            end = chrono::high_resolution_clock::now();
+            auto treapBuildTime = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+            int treapMaxDepth = treap.maxDepth();
+
+            // Treap операции
+            start = chrono::high_resolution_clock::now();
+            for (int key : insertKeys) treap.insert(key);
+            end = chrono::high_resolution_clock::now();
+            auto treapInsertTime = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+            start = chrono::high_resolution_clock::now();
+            for (int key : deleteKeys) treap.remove(key);
+            end = chrono::high_resolution_clock::now();
+            auto treapDeleteTime = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+            start = chrono::high_resolution_clock::now();
+            for (int key : searchKeys) treap.contains(key);
+            end = chrono::high_resolution_clock::now();
+            auto treapSearchTime = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+            // Вывод в консоль
+            cout << i << "\t" << N << "\t" << repetition << "\tAVL\t"
+                << avlMaxDepth << "\t" << avlInsertTime << "\t\t"
+                << avlDeleteTime << "\t\t" << avlSearchTime << endl;
+
+            cout << i << "\t" << N << "\t" << repetition << "\tTreap\t"
+                << treapMaxDepth << "\t" << treapInsertTime << "\t\t"
+                << treapDeleteTime << "\t\t" << treapSearchTime << endl;
+
+            // Запись в файлы
+            outFile << i << "," << N << "," << repetition << ",AVL," << avlMaxDepth << ","
+                << avlInsertTime << "," << avlDeleteTime << "," << avlSearchTime << endl;
+            outFile << i << "," << N << "," << repetition << ",Treap," << treapMaxDepth << ","
+                << treapInsertTime << "," << treapDeleteTime << "," << treapSearchTime << endl;
+
+            // Запись глубин для последней серии
+            if (i == numSeries - 1) {
+                vector<int> avlDepths = avl.allDepths();
+                vector<int> treapDepths = treap.allDepths();
+
+                for (int d : avlDepths)
+                    depthFile << i << "," << N << "," << repetition << ",AVL," << d << endl;
+                for (int d : treapDepths)
+                    depthFile << i << "," << N << "," << repetition << ",Treap," << d << endl;
+            }
+        }
+    }
+
+    return 0;
+}
