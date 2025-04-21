@@ -1,0 +1,317 @@
+#include <vector>
+#include <algorithm>
+#include <stdexcept>
+#include <iostream>
+#include <random>
+#include <chrono>
+#include <cmath>
+#include <numeric>
+#include <fstream>
+
+class MaxBinaryHeap {
+private:
+    std::vector<int> data;
+
+    void siftUp(int index) {
+        while (index > 0) {
+            int parent = (index - 1) / 2;
+            if (data[index] <= data[parent]) break;
+            std::swap(data[index], data[parent]);
+            index = parent;
+        }
+    }
+
+    void siftDown(int index) {
+        int size = data.size();
+        while (true) {
+            int left = 2 * index + 1;
+            int right = 2 * index + 2;
+            int largest = index;
+
+            if (left < size && data[left] > data[largest])
+                largest = left;
+            if (right < size && data[right] > data[largest])
+                largest = right;
+
+            if (largest == index) break;
+            std::swap(data[index], data[largest]);
+            index = largest;
+        }
+    }
+
+public:
+    void insert(int value) {
+        data.push_back(value);
+        siftUp(data.size() - 1);
+    }
+
+    int extractMax() {
+        if (data.empty()) throw std::out_of_range("Heap is empty");
+        int max = data[0];
+        data[0] = data.back();
+        data.pop_back();
+        if (!data.empty()) siftDown(0);
+        return max;
+    }
+
+    int getMax() const {
+        if (data.empty()) throw std::out_of_range("Heap is empty");
+        return data[0];
+    }
+
+    size_t size() const { return data.size(); }
+    bool empty() const { return data.empty(); }
+};
+
+struct BinomialNode {
+    int value;
+    int degree;
+    BinomialNode* child;
+    BinomialNode* sibling;
+    BinomialNode* parent;
+
+    BinomialNode(int val) : value(val), degree(0), child(nullptr), sibling(nullptr), parent(nullptr) {}
+};
+
+class BinomialHeap {
+private:
+    BinomialNode* head;
+    BinomialNode* maxNode;
+
+    BinomialNode* mergeTrees(BinomialNode* a, BinomialNode* b) {
+        if (a->value < b->value) std::swap(a, b);
+        b->sibling = a->child;
+        b->parent = a;
+        a->child = b;
+        a->degree++;
+        return a;
+    }
+
+    BinomialNode* mergeHeaps(BinomialNode* h1, BinomialNode* h2) {
+        BinomialNode dummy(0);
+        BinomialNode* tail = &dummy;
+        while (h1 && h2) {
+            if (h1->degree <= h2->degree) {
+                tail->sibling = h1;
+                h1 = h1->sibling;
+            }
+            else {
+                tail->sibling = h2;
+                h2 = h2->sibling;
+            }
+            tail = tail->sibling;
+        }
+        tail->sibling = h1 ? h1 : h2;
+        return dummy.sibling;
+    }
+
+    void adjustHeap() {
+        if (!head) return;
+        BinomialNode* prev = nullptr;
+        BinomialNode* curr = head;
+        BinomialNode* next = curr->sibling;
+        while (next) {
+            if (curr->degree != next->degree || (next->sibling && next->sibling->degree == curr->degree)) {
+                prev = curr;
+                curr = next;
+            }
+            else {
+                if (curr->value >= next->value) {
+                    curr->sibling = next->sibling;
+                    mergeTrees(curr, next);
+                }
+                else {
+                    if (!prev) head = next;
+                    else prev->sibling = next;
+                    mergeTrees(next, curr);
+                    curr = next;
+                }
+            }
+            next = curr->sibling;
+        }
+    }
+
+    void updateMax() {
+        if (!head) {
+            maxNode = nullptr;
+            return;
+        }
+        maxNode = head;
+        BinomialNode* curr = head;
+        while (curr) {
+            if (curr->value > maxNode->value) maxNode = curr;
+            curr = curr->sibling;
+        }
+    }
+
+    void deleteTree(BinomialNode* node) {
+        if (!node) return;
+        deleteTree(node->child);
+        deleteTree(node->sibling);
+        delete node;
+    }
+
+public:
+    BinomialHeap() : head(nullptr), maxNode(nullptr) {}
+    ~BinomialHeap() { deleteTree(head); }
+
+    void insert(int value) {
+        BinomialHeap tempHeap;
+        tempHeap.head = new BinomialNode(value);
+        tempHeap.maxNode = tempHeap.head;
+        merge(tempHeap);
+    }
+
+    void merge(BinomialHeap& other) {
+        if (this == &other) return;
+        head = mergeHeaps(head, other.head);
+        other.head = nullptr;
+        adjustHeap();
+        updateMax();
+    }
+
+    int getMax() const {
+        if (!maxNode) throw std::out_of_range("Heap is empty");
+        return maxNode->value;
+    }
+
+    int extractMax() {
+        if (!maxNode) throw std::out_of_range("Heap is empty");
+        BinomialNode* prev = nullptr;
+        BinomialNode* curr = head;
+        while (curr != maxNode) {
+            prev = curr;
+            curr = curr->sibling;
+        }
+        if (prev) prev->sibling = curr->sibling;
+        else head = curr->sibling;
+        BinomialHeap childrenHeap;
+        BinomialNode* child = maxNode->child;
+        while (child) {
+            BinomialNode* next = child->sibling;
+            child->sibling = nullptr;
+            childrenHeap.head = mergeHeaps(childrenHeap.head, child);
+            child = next;
+        }
+        int maxVal = maxNode->value;
+        delete maxNode;
+        maxNode = nullptr;
+        merge(childrenHeap);
+        return maxVal;
+    }
+
+    bool empty() const { return head == nullptr; }
+};
+
+template<typename Heap>
+void testOperation(Heap& heap, const std::string& opType, int iterations,
+    const std::vector<int>& elements, std::ofstream& outFile,
+    const std::string& heapName, int N) {
+    // Измеряем в наносекундах и конвертируем в микросекунды
+    using namespace std::chrono;
+
+    // Общее время
+    auto start_total = high_resolution_clock::now();
+    if (opType == "getMax") {
+        for (int i = 0; i < iterations; ++i) heap.getMax();
+    }
+    else if (opType == "extractMax") {
+        for (int i = 0; i < iterations; ++i) heap.extractMax();
+    }
+    else if (opType == "insert") {
+        for (int i = 0; i < iterations; ++i) heap.insert(elements[i]);
+    }
+    auto end_total = high_resolution_clock::now();
+
+    double total_time = duration_cast<nanoseconds>(end_total - start_total).count() / 1000.0; // в микросекундах
+    double avg_time = total_time / iterations;
+
+    outFile << heapName << "," << N << "," << opType << "_total," << avg_time << "\n";
+    std::cout << heapName << "," << N << "," << opType << "_total," << avg_time << "\n";
+
+    // Измерение по группам
+    const std::vector<int> group_sizes = { 10, 25, 50, 100 };
+
+    for (int group_size : group_sizes) {
+        if (iterations < group_size) continue;
+
+        double max_avg = 0.0;
+        int num_groups = iterations / group_size;
+
+        for (int g = 0; g < num_groups; ++g) {
+            Heap heap_group;
+            for (int e : elements) heap_group.insert(e);
+
+            auto start = high_resolution_clock::now();
+            if (opType == "getMax") {
+                for (int i = 0; i < group_size; ++i) heap_group.getMax();
+            }
+            else if (opType == "extractMax") {
+                for (int i = 0; i < group_size; ++i) heap_group.extractMax();
+            }
+            else if (opType == "insert") {
+                for (int i = 0; i < group_size; ++i) {
+                    heap_group.insert(elements[g * group_size + i]);
+                }
+            }
+            auto end = high_resolution_clock::now();
+
+            double group_time = duration_cast<nanoseconds>(end - start).count() / 1000.0;
+            double group_avg = group_time / group_size;
+
+            if (group_avg > max_avg) max_avg = group_avg;
+        }
+
+        outFile << heapName << "," << N << "," << opType << "_max_group_" << group_size << "," << max_avg << "\n";
+        std::cout << heapName << "," << N << "," << opType << "_max_group_" << group_size << "," << max_avg << "\n";
+    }
+}
+
+template<typename Heap>
+void testHeapPerformance(int N, const std::string& heapName, std::ofstream& outFile) {
+    std::vector<int> elements(N);
+    std::iota(elements.begin(), elements.end(), 0);
+    std::shuffle(elements.begin(), elements.end(), std::mt19937{ std::random_device{}() });
+
+    const int test_iterations = std::min(1000, N); // Не больше элементов, чем в куче
+    std::vector<int> insert_elements(test_iterations);
+    std::iota(insert_elements.begin(), insert_elements.end(), N);
+    std::shuffle(insert_elements.begin(), insert_elements.end(), std::mt19937{ std::random_device{}() });
+
+    // Обработка исключений
+    auto handle_operations = [&](auto&& op, const std::string& opType) {
+        try {
+            Heap heap;
+            for (int e : elements) heap.insert(e);
+            testOperation(heap, opType, test_iterations, insert_elements, outFile, heapName, N);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Error in " << opType << " test (N=" << N << "): " << e.what() << std::endl;
+        }
+        };
+
+    handle_operations([](auto&& heap) { heap.getMax(); }, "getMax");
+    handle_operations([](auto&& heap) { heap.extractMax(); }, "extractMax");
+    handle_operations([](auto&& heap, int e) { heap.insert(e); }, "insert");
+}
+
+int main() {
+    std::ofstream outFile("heap_performance.csv");
+    if (!outFile.is_open()) {
+        std::cerr << "Failed to open output file!" << std::endl;
+        return 1;
+    }
+
+    outFile << "Heap,N,Operation,Time(us)\n";
+    std::cout << "Heap,N,Operation,Time(us)\n";
+
+    for (int i = 3; i <= 7; ++i) {
+        int N = pow(10, i);
+        testHeapPerformance<MaxBinaryHeap>(N, "MaxBinaryHeap", outFile);
+        testHeapPerformance<BinomialHeap>(N, "BinomialHeap", outFile);
+    }
+
+    outFile.close();
+    std::cout << "Results written to heap_performance.csv" << std::endl;
+    return 0;
+}
