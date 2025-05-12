@@ -1,0 +1,117 @@
+#include <iostream>
+#include <vector>
+#include <random>
+#include <string>
+#include <iomanip>
+
+using namespace std;
+
+// Функция симуляции одной игры между двумя комбинациями
+bool simulateGame(const string& a, const string& b, mt19937& rng) {
+    uniform_int_distribution<int> bit_dist(0, 1);  // Генератор битов (0 или 1)
+    string window;  // Строка для хранения последовательности бросков
+    
+    // Предварительно заполняем window 14 случайными битами
+    for (int i = 0; i < 14; ++i) {
+        window += bit_dist(rng) ? '1' : '0';
+    }
+
+    // Бесконечный цикл симуляции
+    while (true) {
+        // Проверяем последние 3 символа
+        string last_three = window.substr(window.size() - 3, 3);
+        
+        if (a == b) {
+            // Если комбинации одинаковы - случайный выбор победителя
+            uniform_int_distribution<int> coin(0, 1);
+            return coin(rng) < 0.5;
+        }
+        else {
+            // Проверка совпадения с комбинацией A или B
+            if (last_three == a) return true;   // Победа A
+            if (last_three == b) return false;  // Победа B
+        }
+
+        // Генерация нового броска и обновление window
+        window += bit_dist(rng) ? '1' : '0';
+        // Удаляем самый старый элемент, если длина превышает 14
+        if (window.size() > 14) {
+            window.erase(0, 1);
+        }
+    }
+}
+
+// Основная функция игры
+int game() {
+    const int N = 10000;  // Количество симуляций для каждой пары комбинаций
+    vector<string> comb = { "000", "001", "010", "011", "100", "101", "110", "111" };
+    int size = comb.size();  // Количество комбинаций (8)
+
+    // Матрица вероятностей: probability[B][A] = P(A побеждает B)
+    vector<vector<double>> probability(size, vector<double>(size, 0.0));
+
+    // Инициализация генератора случайных чисел
+    random_device rd;
+    mt19937 rng(rd());
+
+    // Перебор всех пар комбинаций
+    for (int a = 0; a < size; ++a) {      // Комбинации игрока A (столбцы)
+        for (int b = 0; b < size; ++b) {  // Комбинации игрока B (строки)
+            int winsA = 0;  // Счетчик побед A
+
+            // Проведение N симуляций для текущей пары
+            for (int i = 0; i < N; ++i) {
+                if (simulateGame(comb[a], comb[b], rng)) {
+                    winsA++;  // Увеличение счетчика побед A
+                }
+            }
+
+            // Расчет вероятности победы A
+            probability[b][a] = static_cast<double>(winsA) / N;
+        }
+    }
+
+    // Вывод таблицы вероятностей
+    cout << "Таблица вероятностей победы A (столбцы) над B (строки):\n";
+    cout << "B\\A ";
+    // Заголовок таблицы - комбинации A
+    for (const string& c : comb) cout << setw(6) << c << " ";
+    cout << "\n";
+
+    // Вывод строк таблицы
+    for (int b = 0; b < size; ++b) {
+        cout << comb[b] << " ";  // Комбинация B (начало строки)
+        // Вероятности для текущей комбинации B против всех A
+        for (int a = 0; a < size; ++a) {
+            cout << fixed << setprecision(2) << setw(6) << probability[b][a] << " ";
+        }
+        cout << "\n";
+    }
+
+    // Расчет средних шансов победы
+    double total = 0.0;
+    // Суммирование всех вероятностей
+    for (const auto& row : probability) {
+        for (double val : row) {
+            total += val;
+        }
+    }
+    // Средняя вероятность победы A
+    double avgA = total / (size * size);
+    // Средняя вероятность победы B
+    double avgB = 1.00 - avgA;
+
+    cout << "\nСредний шанс выигрыша A: " << avgA << endl;
+    cout << "Средний шанс выигрыша B: " << avgB << endl;
+
+    return 0;
+}
+
+// Главная функция программы
+int main() {
+    setlocale(LC_ALL, "Russian");  
+    game();  
+    cout << "\n" << endl;
+    game();  
+    return 0;
+}
